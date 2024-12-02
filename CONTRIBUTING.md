@@ -48,7 +48,7 @@ If you have a suggestion for the project, we'd love to hear it. Enhancement sugg
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/sag-ine.git
+git clone https://github.com//SagineBM/sag-ine.git
 ```
 
 2. Create a branch for your feature
