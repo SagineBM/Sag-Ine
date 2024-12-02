@@ -28,7 +28,7 @@ Sag Ine is a versatile AI assistant application with a modern graphical user int
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/sag-ine.git
+git clone https://github.com//SagineBM/sag-ine.git
 cd sag-ine
 ```
 
