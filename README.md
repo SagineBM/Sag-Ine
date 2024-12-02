@@ -53,7 +53,6 @@ The application uses a configuration file (`sag_ine_config.json`) to store setti
 - `config_manager.py`: Configuration management
 - `file_handlers.py`: File operations handling
 - `web_search.py`: Web search functionality
-- `create_icon.py`: Icon creation utility
 - `create_shortcut.py`: Desktop shortcut creation
 - `setup.py`: Installation setup script
 
