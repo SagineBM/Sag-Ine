@@ -1,51 +1,78 @@
-# Sag Ine - AI Assistant GUI
+# Sag Ine AI Assistant
 
-Sag Ine is a versatile AI assistant application with a modern graphical user interface built using CustomTkinter. It supports multiple AI providers and offers file analysis capabilities along with interactive chat functionality.
+An intelligent AI assistant with advanced personalization, service integrations, and AI-powered features.
 
 ## Features
 
-- 🤖 Multiple AI Provider Support
-  - Ollama (local AI)
-  - OpenAI
-  - Google Gemini
-  - Web-only mode
-- 🎨 Modern Dark Theme Interface
-- 📁 File Analysis Capabilities
-- ⚙️ Configurable Settings
-- 💬 Interactive Chat Interface
+### Core Features
+- Multi-provider AI support (OpenAI, Google Gemini, Ollama)
+- Modern and responsive GUI
+- File analysis capabilities
+- Web search integration
 
-## Requirements
+### New Features
+- **Personalization**
+  - Customizable themes and appearance
+  - Adjustable AI behavior and preferences
+  - Custom assistant name and chat style
 
-- Python 3.x
-- CustomTkinter
-- Pillow (PIL)
-- Requests
-- BeautifulSoup4
-- Google Generative AI
-- OpenAI
+- **Service Integrations**
+  - Google Calendar integration
+  - Gmail integration
+  - Google Sheets support
+  - More integrations coming soon!
 
-## Installation
+- **AI-Driven Features**
+  - Context-aware responses
+  - Personalized recommendations
+  - Multiple AI model support
 
+<<<<<<< Updated upstream
 1. Clone the repository:
 ```bash
 git clone https://github.com//SagineBM/sag-ine.git
 cd sag-ine
 ```
+=======
+## Setup
+>>>>>>> Stashed changes
 
-2. Install the required dependencies:
-```bash
-pip install -r requirements.txt
-```
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Set up Google Cloud Project:
+   - Create a project in Google Cloud Console
+   - Enable Calendar, Gmail, and Sheets APIs
+   - Create OAuth 2.0 credentials
+   - Download credentials as `credentials.json` and place in project root
+
+3. Configure AI providers:
+   - Set up API keys in environment variables or config file
+   - Supported providers: OpenAI, Google Gemini, Ollama
+
+4. Run the application:
+   ```bash
+   python ai_assistant_gui.py
+   ```
 
 ## Configuration
 
-The application uses a configuration file (`sag_ine_config.json`) to store settings for different AI providers. You can configure:
+### User Preferences
+User preferences are stored in `user_preferences.json` and include:
+- Theme settings
+- Font preferences
+- Language options
+- AI model preferences
+- Integration settings
 
-- AI Provider selection (ollama, openai, gemini, none)
-- API keys for OpenAI and Google Gemini
-- Ollama host and port settings
-- Model selection for Ollama
+### Service Integration
+- Requires Google OAuth2 authentication
+- First-time setup will prompt for authorization
+- Credentials are securely stored for future use
 
+<<<<<<< Updated upstream
 ## Project Structure
 
 - `ai_assistant_gui.py`: Main GUI application using CustomTkinter
@@ -99,16 +126,12 @@ python ai_assistant_gui.py
 - Input/Output text areas
 - File analysis capabilities
 - Provider configuration panel
+=======
+## Security
+- API keys and credentials are securely stored
+- OAuth2 authentication for Google services
+- No sensitive data is stored in plain text
+>>>>>>> Stashed changes
 
 ## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- CustomTkinter for the modern UI components
-- Various AI providers for their APIs and services
+Contributions are welcome! Please feel free to submit pull requests.
