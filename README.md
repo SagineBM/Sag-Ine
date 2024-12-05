@@ -28,7 +28,7 @@ Sag Ine is a versatile AI assistant application with a modern graphical user int
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/sag-ine.git
+git clone https://github.com//SagineBM/sag-ine.git
 cd sag-ine
 ```
 
@@ -53,7 +53,6 @@ The application uses a configuration file (`sag_ine_config.json`) to store setti
 - `config_manager.py`: Configuration management
 - `file_handlers.py`: File operations handling
 - `web_search.py`: Web search functionality
-- `create_icon.py`: Icon creation utility
 - `create_shortcut.py`: Desktop shortcut creation
 - `setup.py`: Installation setup script
 
