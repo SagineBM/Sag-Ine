@@ -12,34 +12,271 @@ from config_manager import ConfigManager
 from ai_providers import OllamaProvider, OpenAIProvider, GeminiProvider, WebOnlyProvider
 from file_handlers import FileHandler
 from web_search import search_web
+from user_preferences import UserPreferences
+from service_integrations import ServiceIntegrationManager
+import time
+from datetime import datetime
+
+# Custom color scheme
+THEME = {
+    'primary': '#1E88E5',       # Main brand color
+    'secondary': '#0D47A1',     # Darker shade for hover states
+    'background': '#1a1a1a',    # Dark background
+    'surface': '#2b2b2b',       # Slightly lighter background for cards
+    'text': '#FFFFFF',          # Primary text color
+    'text_secondary': '#B0BEC5' # Secondary text color
+}
 
 # Set appearance mode and default color theme
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+class AnimatedButton(ctk.CTkButton):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hover_animation = None
+        self.bind("<Enter>", self.on_enter)
+        self.bind("<Leave>", self.on_leave)
+
+    def on_enter(self, event):
+        if self.hover_animation:
+            self.after_cancel(self.hover_animation)
+        self._animate_hover(0)
+
+    def on_leave(self, event):
+        if self.hover_animation:
+            self.after_cancel(self.hover_animation)
+        self._animate_hover(1)
+
+    def _animate_hover(self, direction):
+        current_color = self._fg_color
+        target_color = THEME['secondary'] if direction == 0 else THEME['primary']
+        self.configure(fg_color=target_color)
+        
+class LoadingDots(ctk.CTkFrame):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dots = []
+        for i in range(3):
+            dot = ctk.CTkLabel(self, text="•", text_color=THEME['text'], font=("Helvetica", 24))
+            dot.grid(row=0, column=i, padx=2)
+            self.dots.append(dot)
+        self.current_dot = 0
+        self.animate()
+
+    def animate(self):
+        for i, dot in enumerate(self.dots):
+            if i == self.current_dot:
+                dot.configure(text_color=THEME['primary'])
+            else:
+                dot.configure(text_color=THEME['text_secondary'])
+        self.current_dot = (self.current_dot + 1) % 3
+        self.after(500, self.animate)
+
+class ChatBubbleFrame(ctk.CTkFrame):
+    def __init__(self, master, message, is_user=True, **kwargs):
+        super().__init__(master, fg_color="transparent", **kwargs)
+        
+        # Configure grid
+        self.grid_columnconfigure(0, weight=1)
+        
+        # Create bubble frame
+        bubble_color = THEME['primary'] if is_user else THEME['surface']
+        text_color = THEME['text']
+        
+        bubble = ctk.CTkFrame(
+            self,
+            fg_color=bubble_color,
+            corner_radius=20
+        )
+        
+        # Position bubble based on sender
+        if is_user:
+            bubble.grid(row=0, column=0, padx=(100, 20), pady=5, sticky="e")
+        else:
+            bubble.grid(row=0, column=0, padx=(20, 100), pady=5, sticky="w")
+        
+        # Add message text
+        label = ctk.CTkLabel(
+            bubble,
+            text=message,
+            text_color=text_color,
+            font=("Helvetica", 12),
+            wraplength=400,
+            justify="left" if not is_user else "right"
+        )
+        label.pack(padx=15, pady=10)
+
+class ScrollableChatFrame(ctk.CTkScrollableFrame):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self.grid_columnconfigure(0, weight=1)
+
+    def add_message(self, message, is_user=True):
+        ChatBubbleFrame(self, message, is_user).grid(row=len(self.grid_slaves()), column=0, sticky="ew")
+        
+        # Scroll to bottom after adding message
+        self.after(100, self._scroll_to_bottom)
+    
+    def _scroll_to_bottom(self):
+        try:
+            self._parent_canvas.yview_moveto(1.0)
+        except:
+            pass
+
+    def add_loading_indicator(self):
+        loading_frame = LoadingDots(
+            self,
+            fg_color=THEME['surface'],
+            corner_radius=20
+        )
+        loading_frame.grid(row=len(self.grid_slaves()), column=0, padx=(20, 100), pady=5, sticky="w")
+        
+        return loading_frame
 
 class AIAssistantGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
         self.config = ConfigManager()
+        self.user_prefs = UserPreferences()
+        self.service_manager = ServiceIntegrationManager()
         self.setup_ai_provider()
         
+        # Initialize request queue and processing flag
+        self.request_queue = []
+        self.is_processing = False
+        self.current_task = None
+        
         # Configure window
-        self.title("Sag Ine")
-        self.geometry("1200x800")
+        self.title(self.user_prefs.get_preference("personalization", "assistant_name"))
+        self.geometry("1400x800")
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # Configure grid
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        # Set theme based on user preferences
+        ctk.set_appearance_mode(self.user_prefs.get_preference("theme"))
         
-        # Create frames
-        self.create_top_frame()
-        self.create_main_frame()
-        self.create_bottom_frame()
+        # Configure grid for main content and sidebar
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
         
-        # Initialize file analysis variables
-        self.current_file = None
-        self.file_content = None
+        # Create sidebar with enhanced styling
+        self.sidebar = ctk.CTkFrame(self, width=80, fg_color=THEME['background'])
+        self.sidebar.grid(row=0, column=0, sticky="nsew", rowspan=3)
+        self.sidebar.grid_propagate(False)
+        
+        # Sidebar buttons with new AnimatedButton class
+        button_configs = [
+            ("⚙️", self.show_config_window, "Settings"),
+            ("📁", self.select_file, "Files"),
+            ("📅", self.show_calendar, "Calendar"),
+            ("📧", self.show_emails, "Email")
+        ]
+        
+        for i, (icon, command, tooltip) in enumerate(button_configs):
+            btn = AnimatedButton(
+                self.sidebar,
+                text=icon,
+                width=50,
+                height=50,
+                fg_color=THEME['primary'],
+                hover_color=THEME['secondary'],
+                command=command
+            )
+            btn.grid(row=i, column=0, pady=10, padx=15)
+            self._create_tooltip(btn, tooltip)
+        
+        # Create main content frame with modern styling
+        self.main_content = ctk.CTkFrame(self, fg_color=THEME['surface'])
+        self.main_content.grid(row=0, column=1, sticky="nsew", rowspan=3)
+        self.main_content.grid_columnconfigure(0, weight=1)
+        self.main_content.grid_rowconfigure(1, weight=1)
+        
+        # Enhanced top bar
+        self.top_bar = ctk.CTkFrame(self.main_content, fg_color=THEME['background'], height=60)
+        self.top_bar.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+        
+        # Styled AI Provider selection
+        self.provider_var = ctk.StringVar(value=self.config.get_ai_provider())
+        provider_menu = ctk.CTkOptionMenu(
+            self.top_bar,
+            values=["none", "ollama", "openai", "gemini"],
+            variable=self.provider_var,
+            command=self.change_provider,
+            fg_color=THEME['primary'],
+            button_color=THEME['primary'],
+            button_hover_color=THEME['secondary'],
+            dropdown_hover_color=THEME['secondary']
+        )
+        provider_menu.pack(side="left", padx=20, pady=10)
+        
+        # Chat area with enhanced styling
+        self.chat_frame = ScrollableChatFrame(
+            self.main_content,
+            fg_color=THEME['surface'],
+            corner_radius=15
+        )
+        self.chat_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(10, 10))
+        
+        # Modern input frame
+        self.input_frame = ctk.CTkFrame(self.main_content, fg_color=THEME['background'], height=80)
+        self.input_frame.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
+        self.input_frame.grid_columnconfigure(0, weight=1)
+        
+        # Enhanced input field
+        self.input_field = ctk.CTkEntry(
+            self.input_frame,
+            placeholder_text="Type your message here...",
+            fg_color=THEME['surface'],
+            text_color=THEME['text'],
+            placeholder_text_color=THEME['text_secondary'],
+            font=("Helvetica", 14),
+            height=50,
+            corner_radius=25
+        )
+        self.input_field.grid(row=0, column=0, padx=(20, 10), pady=15, sticky="ew")
+        
+        # Modern send button
+        self.send_button = AnimatedButton(
+            self.input_frame,
+            text="Send",
+            command=self.send_message,
+            fg_color=THEME['primary'],
+            hover_color=THEME['secondary'],
+            font=("Helvetica", 14, "bold"),
+            width=100,
+            height=40,
+            corner_radius=20
+        )
+        self.send_button.grid(row=0, column=1, padx=(10, 20), pady=15)
+        
+        # Bind Enter key
+        self.input_field.bind("<Return>", self.send_message)
+        
+        # Show welcome message with typing animation
+        self.after(500, lambda: self._show_welcome_message())
+
+    def _create_tooltip(self, widget, text):
+        tooltip = ctk.CTkLabel(
+            widget,
+            text=text,
+            fg_color=THEME['background'],
+            corner_radius=6,
+            text_color=THEME['text']
+        )
+        
+        def enter(event):
+            tooltip.place(x=widget.winfo_width() + 10, y=widget.winfo_height()//2)
+            
+        def leave(event):
+            tooltip.place_forget()
+            
+        widget.bind("<Enter>", enter)
+        widget.bind("<Leave>", leave)
+
+    def _show_welcome_message(self):
+        welcome_msg = "👋 Hello! I'm your AI assistant. How can I help you today?"
+        self.chat_frame.add_message(welcome_msg, is_user=False)
 
     def setup_ai_provider(self):
         provider = self.config.get_ai_provider()
@@ -54,76 +291,6 @@ class AIAssistantGUI(ctk.CTk):
             self.ai_provider = GeminiProvider(api_key)
         else:
             self.ai_provider = WebOnlyProvider()
-    
-    def create_top_frame(self):
-        top_frame = ctk.CTkFrame(self)
-        top_frame.grid(row=0, column=0, padx=10, pady=5, sticky="ew")
-        
-        # AI Provider selection
-        provider_label = ctk.CTkLabel(top_frame, text="AI Provider:")
-        provider_label.pack(side="left", padx=5)
-        
-        self.provider_var = ctk.StringVar(value=self.config.get_ai_provider())
-        provider_menu = ctk.CTkOptionMenu(
-            top_frame,
-            values=["none", "ollama", "openai", "gemini"],
-            variable=self.provider_var,
-            command=self.change_provider
-        )
-        provider_menu.pack(side="left", padx=5)
-        
-        # Configure button
-        config_btn = ctk.CTkButton(top_frame, text="Configure", command=self.show_config_window)
-        config_btn.pack(side="left", padx=5)
-        
-        # File analysis button
-        analyze_btn = ctk.CTkButton(top_frame, text="Analyze File", command=self.select_file)
-        analyze_btn.pack(side="right", padx=5)
-    
-    def create_main_frame(self):
-        main_frame = ctk.CTkFrame(self)
-        main_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
-        
-        main_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_rowconfigure(1, weight=1)
-        
-        # Input frame
-        input_frame = ctk.CTkFrame(main_frame)
-        input_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        
-        self.input_text = ctk.CTkTextbox(input_frame, height=100)
-        self.input_text.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Output frame
-        output_frame = ctk.CTkFrame(main_frame)
-        output_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
-        
-        self.output_text = ctk.CTkTextbox(output_frame)
-        self.output_text.pack(fill="both", expand=True, padx=5, pady=5)
-    
-    def create_bottom_frame(self):
-        bottom_frame = ctk.CTkFrame(self)
-        bottom_frame.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
-        
-        # Search mode selection
-        self.search_mode = ctk.StringVar(value="both")
-        
-        ai_radio = ctk.CTkRadioButton(bottom_frame, text="AI Only", variable=self.search_mode, value="ai")
-        ai_radio.pack(side="left", padx=5)
-        
-        web_radio = ctk.CTkRadioButton(bottom_frame, text="Web Only", variable=self.search_mode, value="web")
-        web_radio.pack(side="left", padx=5)
-        
-        both_radio = ctk.CTkRadioButton(bottom_frame, text="Both", variable=self.search_mode, value="both")
-        both_radio.pack(side="left", padx=5)
-        
-        # Search button
-        search_btn = ctk.CTkButton(bottom_frame, text="Search", command=self.search)
-        search_btn.pack(side="right", padx=5)
-        
-        # Clear button
-        clear_btn = ctk.CTkButton(bottom_frame, text="Clear", command=self.clear)
-        clear_btn.pack(side="right", padx=5)
     
     def show_config_window(self):
         config_window = ctk.CTkToplevel(self)
@@ -202,50 +369,162 @@ class AIAssistantGUI(ctk.CTk):
             try:
                 self.current_file = filename
                 self.file_content, file_type = FileHandler.read_file(filename)
-                self.input_text.delete("1.0", "end")
-                self.input_text.insert("1.0", f"Analyzing {file_type} file: {filename}\n\n")
-                self.search()
+                self.chat_frame.add_message(f"Analyzing {file_type} file: {filename}\n\n", is_user=False)
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to read file: {str(e)}")
     
-    def search(self):
-        query = self.input_text.get("1.0", "end").strip()
-        mode = self.search_mode.get()
-        
-        if not query:
-            messagebox.showwarning("Warning", "Please enter a query or select a file to analyze.")
+    def process_queue(self):
+        if self.is_processing or not self.request_queue:
             return
         
-        self.output_text.delete("1.0", "end")
-        self.output_text.insert("end", "Searching...\n\n")
+        self.is_processing = True
+        task = self.request_queue.pop(0)
+        self.current_task = task
         
-        def search_thread():
-            results = []
-            
-            if mode in ["ai", "both"] and isinstance(self.ai_provider, WebOnlyProvider):
-                results.append("AI search is not available. Please configure an AI provider.")
-            elif mode in ["ai", "both"]:
-                if self.file_content:
-                    ai_response = self.ai_provider.analyze_file(self.file_content, "file")
-                else:
-                    ai_response = self.ai_provider.generate_response(query)
-                results.append(f"AI Response:\n{ai_response}\n")
-            
-            if mode in ["web", "both"]:
-                web_results = search_web(query)
-                results.append(f"\nWeb Search Results:\n{web_results}")
-            
-            self.output_text.delete("1.0", "end")
-            for result in results:
-                self.output_text.insert("end", result + "\n")
+        def on_complete(response):
+            self.is_processing = False
+            self.current_task = None
+            self.chat_frame.add_message(response, is_user=False)
+            self.after(100, self.process_queue)
         
-        threading.Thread(target=search_thread, daemon=True).start()
+        thread = threading.Thread(
+            target=self._process_task_thread,
+            args=(task, on_complete)
+        )
+        thread.start()
+
+    def _process_task_thread(self, task, callback):
+        try:
+            response = self.ai_provider.generate_response(task)
+            self.after(0, lambda: callback(response))
+        except Exception as e:
+            error_msg = f"Error processing request: {str(e)}"
+            self.after(0, lambda: callback(error_msg))
+
+    def send_message(self, event=None):
+        user_input = self.input_field.get()
+        if user_input:
+            # Add user message
+            self.chat_frame.add_message(user_input, is_user=True)
+            
+            self.input_field.delete(0, 'end')
+            query = user_input
+            mode = "ai"
+            
+            if not query:
+                messagebox.showwarning("Warning", "Please enter a query or select a file to analyze.")
+                return
+            
+            # Add loading indicator
+            loading_frame = self.chat_frame.add_loading_indicator()
+            
+            # Add to queue and process
+            self.request_queue.append(query)
+            self.process_queue()
     
-    def clear(self):
-        self.input_text.delete("1.0", "end")
-        self.output_text.delete("1.0", "end")
-        self.current_file = None
-        self.file_content = None
+    def show_calendar(self):
+        if not self.service_manager.credentials:
+            if not self.service_manager.authenticate():
+                messagebox.showerror("Authentication Error", "Failed to authenticate with Google services")
+                return
+        
+        result = self.service_manager.get_calendar_events()
+        if 'error' in result:
+            messagebox.showerror("Error", f"Failed to fetch calendar events: {result['error']}")
+            return
+            
+        events = result.get('events', [])
+        if events:
+            event_window = ctk.CTkToplevel(self)
+            event_window.title("Calendar Events")
+            event_window.geometry("600x400")
+            
+            # Create header
+            header = ctk.CTkLabel(
+                event_window,
+                text="Upcoming Calendar Events",
+                font=("Helvetica", 16, "bold"),
+                text_color=THEME['text']
+            )
+            header.pack(pady=10)
+            
+            event_frame = ScrollableChatFrame(event_window)
+            event_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            for event in events:
+                summary = event.get('summary', 'No Title')
+                start = event.get('start', {}).get('dateTime', event.get('start', {}).get('date', 'N/A'))
+                location = event.get('location', 'No Location')
+                
+                # Format the date/time
+                try:
+                    if 'T' in start:  # DateTime format
+                        dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                        formatted_time = dt.strftime("%B %d, %Y at %I:%M %p")
+                    else:  # Date only format
+                        dt = datetime.fromisoformat(start)
+                        formatted_time = dt.strftime("%B %d, %Y")
+                except:
+                    formatted_time = start
+                
+                event_text = f"📅 {summary}\n🕒 {formatted_time}\n📍 {location}"
+                event_frame.add_message(event_text, False)
+        else:
+            messagebox.showinfo("Calendar", "No upcoming events found")
+
+    def show_emails(self):
+        if not self.service_manager.credentials:
+            if not self.service_manager.authenticate():
+                messagebox.showerror("Authentication Error", "Failed to authenticate with Google services")
+                return
+        
+        result = self.service_manager.get_emails()
+        if 'error' in result:
+            messagebox.showerror("Error", f"Failed to fetch emails: {result['error']}")
+            return
+            
+        emails = result.get('messages', [])
+        if emails:
+            email_window = ctk.CTkToplevel(self)
+            email_window.title("Recent Emails")
+            email_window.geometry("600x400")
+            
+            # Create header
+            header = ctk.CTkLabel(
+                email_window,
+                text="Recent Emails",
+                font=("Helvetica", 16, "bold"),
+                text_color=THEME['text']
+            )
+            header.pack(pady=10)
+            
+            email_frame = ScrollableChatFrame(email_window)
+            email_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            for email in emails:
+                subject = email.get('subject', 'No Subject')
+                sender = email.get('from', 'Unknown Sender')
+                date = email.get('date', 'No Date')
+                
+                try:
+                    dt = datetime.strptime(date, "%a, %d %b %Y %H:%M:%S %z")
+                    formatted_date = dt.strftime("%B %d, %Y at %I:%M %p")
+                except:
+                    formatted_date = date
+                
+                email_text = f"📧 {subject}\n👤 From: {sender}\n🕒 {formatted_date}"
+                email_frame.add_message(email_text, False)
+        else:
+            messagebox.showinfo("Email", "No recent emails found")
+
+    def on_closing(self):
+        try:
+            if hasattr(self, 'ai_provider'):
+                self.ai_provider.cleanup()
+        except:
+            pass
+        self.quit()
+        self.destroy()
 
 if __name__ == "__main__":
     app = AIAssistantGUI()

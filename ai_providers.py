@@ -22,10 +22,20 @@ class OllamaProvider(AIProvider):
         try:
             response = requests.post(
                 f"{self.base_url}/api/generate",
-                json={"model": self.model, "prompt": prompt}
+                json={"model": self.model, "prompt": prompt},
+                stream=True
             )
             if response.status_code == 200:
-                return response.json()['response']
+                full_response = ""
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            json_response = json.loads(line)
+                            if 'response' in json_response:
+                                full_response += json_response['response']
+                        except json.JSONDecodeError:
+                            continue
+                return full_response
             return f"Error: {response.status_code}"
         except Exception as e:
             return f"Error connecting to Ollama: {str(e)}"
